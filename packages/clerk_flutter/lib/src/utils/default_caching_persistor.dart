@@ -13,15 +13,39 @@ class DefaultCachingPersistor extends clerk.DefaultPersistor
 
   static const _kETagHeader = 'ETag';
 
+  static final _unsafeCharacters = RegExp('[^A-Za-z0-9_-]');
+
+  static String _cacheFilenameFor(Uri uri) => uri.hashCode
+      .toUnsigned(32)
+      .toRadixString(16)
+      .replaceAll(_unsafeCharacters, '');
+
+  File _fileFor(String filename) {
+    final separator = Platform.pathSeparator;
+    final directory = cacheDirectory!.path.endsWith(separator)
+        ? cacheDirectory!.path
+        : '${cacheDirectory!.path}$separator';
+    final file = File('$directory$filename');
+    if (filename.isEmpty ||
+        filename.contains(_unsafeCharacters) ||
+        file.path.startsWith(directory) == false) {
+      throw ArgumentError.value(
+        filename,
+        'filename',
+        'Cache filename escapes the cache directory',
+      );
+    }
+    return file;
+  }
+
   @override
   Stream<File> stream(
     Uri uri, {
     Duration ttl = ClerkFileCache.defaultTTL,
     Map<String, String>? headers,
   }) async* {
-    final filename = uri.hashCode.toString();
-    final file =
-        File('${cacheDirectory!.path}${Platform.pathSeparator}$filename');
+    final filename = _cacheFilenameFor(uri);
+    final file = _fileFor(filename);
     final etagKey = '$filename.etag';
 
     if (await file.exists()) {
