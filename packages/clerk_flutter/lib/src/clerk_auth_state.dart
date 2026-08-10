@@ -408,6 +408,27 @@ class _SsoWebViewOverlayState extends State<_SsoWebViewOverlay> {
   late final WebViewController controller;
   Future<String?>? _title;
 
+  static const _permittedSchemes = {'https'};
+
+  static bool _isPermitted(Uri uri) =>
+      _permittedSchemes.contains(uri.scheme) && uri.host.isNotEmpty;
+
+  void _reportBlocked(String url) => widget.onError(
+        clerk.AuthError(
+          code: clerk.AuthErrorCode.webviewErrorResponse,
+          message: 'Refused to load untrusted url in sign-in webview: {arg}',
+          argument: url,
+        ),
+      );
+
+  void _loadSsoUri() {
+    if (_isPermitted(widget.uri)) {
+      controller.loadRequest(widget.uri);
+    } else {
+      _reportBlocked(widget.uri.toString());
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -434,6 +455,11 @@ class _SsoWebViewOverlayState extends State<_SsoWebViewOverlay> {
                 });
                 return NavigationDecision.prevent;
               }
+              final uri = Uri.tryParse(request.url);
+              if (uri is! Uri || _isPermitted(uri) == false) {
+                _reportBlocked(request.url);
+                return NavigationDecision.prevent;
+              }
               return NavigationDecision.navigate;
             } on clerk.AuthError catch (error) {
               widget.onError(error);
@@ -446,7 +472,7 @@ class _SsoWebViewOverlayState extends State<_SsoWebViewOverlay> {
     // For google authentication we use a custom user-agent
     if (widget.strategy.provider == clerk.Strategy.oauthGoogle.provider) {
       controller.setUserAgent(clerk.ClerkConstants.userAgent);
-      controller.loadRequest(widget.uri);
+      _loadSsoUri();
     } else {
       controller.getUserAgent().then((String? userAgent) {
         if (mounted) {
@@ -455,7 +481,7 @@ class _SsoWebViewOverlayState extends State<_SsoWebViewOverlay> {
               '$userAgent ${clerk.ClerkConstants.userAgent}',
             );
           }
-          controller.loadRequest(widget.uri);
+          _loadSsoUri();
         }
       });
     }
